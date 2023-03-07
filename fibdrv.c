@@ -6,6 +6,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/slab.h>
+#include "strlib.h"
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -17,7 +19,7 @@ MODULE_VERSION("0.1");
 /* MAX_LENGTH is set to 92 because
  * ssize_t can't fit the number > 92
  */
-#define MAX_LENGTH 92
+#define MAX_LENGTH 500
 
 static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
@@ -27,7 +29,7 @@ static DEFINE_MUTEX(fib_mutex);
 static long long fib_sequence(long long k)
 {
     /* FIXME: C99 variable-length array (VLA) is not allowed in Linux kernel. */
-    long long f[k + 2];
+    long long *f = kmalloc((k + 2) * sizeof(long long), GFP_KERNEL);
 
     f[0] = 0;
     f[1] = 1;
@@ -37,6 +39,47 @@ static long long fib_sequence(long long k)
     }
 
     return f[k];
+}
+
+static long long fib_sequence_str(long long k, void *buf)
+{
+    char *f0 = kmalloc(128 * sizeof(char), GFP_KERNEL);
+    char *f1 = kmalloc(128 * sizeof(char), GFP_KERNEL);
+    char *f2 = kmalloc(128 * sizeof(char), GFP_KERNEL);
+    memset(f0, '\0', 128);
+    memset(f1, '\0', 128);
+    memset(f2, '\0', 128);
+    f0[0] = '0';
+    f1[0] = '1';
+    if (k == 0) {
+        copy_to_user(buf, f0, sizeof(char) * 128);
+        return strlen(f2);
+    }
+    if (k == 1) {
+        copy_to_user(buf, f1, sizeof(char) * 128);
+        return strlen(f1);
+    }
+    char *tmp;
+
+    for (int i = 2; i <= k; i++) {
+        string_number_add(f1, f0, f2);
+        tmp = f0;
+        f0 = f1;
+        f1 = f2;
+        f2 = tmp;
+    }
+
+    // printk("fibans: %s\n", f1);
+    if (__copy_to_user(buf, f1, strlen(f1))) {
+        kfree(f0);
+        kfree(f1);
+        kfree(f2);
+        return -EFAULT;
+    }
+    kfree(f0);
+    kfree(f1);
+    kfree(f2);
+    return strlen(f1);
 }
 
 static int fib_open(struct inode *inode, struct file *file)
@@ -60,7 +103,7 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
-    return (ssize_t) fib_sequence(*offset);
+    return (ssize_t) fib_sequence_str(*offset, buf);
 }
 
 /* write operation is skipped */

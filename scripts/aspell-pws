@@ -324,3 +324,4 @@ timespec
 timeval
 lkmpg
 vla
+str
