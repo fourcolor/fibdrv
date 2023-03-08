@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "module.h": "c",
+        "kernel.h": "c",
+        "mutex.h": "c",
+        "memory": "c",
+        "init.h": "c",
+        "cdev.h": "c",
+        "slab.h": "c",
+        "string.h": "c",
+        "hrtimer.h": "c",
+        "strlib.h": "c",
+        "ktime.h": "c"
+    }
+}

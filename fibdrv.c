@@ -4,6 +4,7 @@
 #include <linux/init.h>
 #include <linux/kdev_t.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
@@ -25,6 +26,7 @@ static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
 static struct class *fib_class;
 static DEFINE_MUTEX(fib_mutex);
+static ktime_t kt;
 
 static long long fib_sequence(long long k)
 {
@@ -69,7 +71,6 @@ static long long fib_sequence_str(long long k, void *buf)
         f2 = tmp;
     }
 
-    // printk("fibans: %s\n", f1);
     if (__copy_to_user(buf, f1, strlen(f1))) {
         kfree(f0);
         kfree(f1);
@@ -80,6 +81,15 @@ static long long fib_sequence_str(long long k, void *buf)
     kfree(f1);
     kfree(f2);
     return strlen(f1);
+}
+
+static long long fib_time_proxy(long long k, char *buf)
+{
+    kt = ktime_get();
+    long long result = fib_sequence_str(k, buf);
+    kt = ktime_sub(ktime_get(), kt);
+
+    return result;
 }
 
 static int fib_open(struct inode *inode, struct file *file)
@@ -103,7 +113,7 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
-    return (ssize_t) fib_sequence_str(*offset, buf);
+    return (ssize_t) fib_time_proxy(*offset, buf);
 }
 
 /* write operation is skipped */
@@ -112,7 +122,7 @@ static ssize_t fib_write(struct file *file,
                          size_t size,
                          loff_t *offset)
 {
-    return 1;
+    return ktime_to_ns(kt);
 }
 
 static loff_t fib_device_lseek(struct file *file, loff_t offset, int orig)
