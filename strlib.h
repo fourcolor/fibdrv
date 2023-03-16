@@ -9,6 +9,10 @@
     } while (0)
 
 
+typedef struct {
+    char data[128];
+} strNum_t;
+
 static void __swap(void *a, void *b, size_t size)
 {
     if (a == b)

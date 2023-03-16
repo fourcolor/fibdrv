@@ -20,7 +20,7 @@ MODULE_VERSION("0.1");
 /* MAX_LENGTH is set to 92 because
  * ssize_t can't fit the number > 92
  */
-#define MAX_LENGTH 500
+#define MAX_LENGTH 1000
 
 static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
@@ -45,42 +45,21 @@ static long long fib_sequence(long long k)
 
 static long long fib_sequence_str(long long k, void *buf)
 {
-    char *f0 = kmalloc(128 * sizeof(char), GFP_KERNEL);
-    char *f1 = kmalloc(128 * sizeof(char), GFP_KERNEL);
-    char *f2 = kmalloc(128 * sizeof(char), GFP_KERNEL);
-    memset(f0, '\0', 128);
-    memset(f1, '\0', 128);
-    memset(f2, '\0', 128);
-    f0[0] = '0';
-    f1[0] = '1';
-    if (k == 0) {
-        copy_to_user(buf, f0, sizeof(char) * 128);
-        return strlen(f2);
-    }
-    if (k == 1) {
-        copy_to_user(buf, f1, sizeof(char) * 128);
-        return strlen(f1);
-    }
-    char *tmp;
+    strNum_t *f = kmalloc((k + 1) * sizeof(strNum_t), GFP_KERNEL);
+    strncpy(f[0].data, "0", 1);
+    strncpy(f[1].data, "1", 1);
 
     for (int i = 2; i <= k; i++) {
-        string_number_add(f1, f0, f2);
-        tmp = f0;
-        f0 = f1;
-        f1 = f2;
-        f2 = tmp;
+        string_number_add(f[i - 2].data, f[i - 1].data, f[i].data);
     }
+    size_t retSize = strlen(f[k].data);
 
-    if (__copy_to_user(buf, f1, strlen(f1))) {
-        kfree(f0);
-        kfree(f1);
-        kfree(f2);
+    if (copy_to_user(buf, f[k].data, retSize)) {
+        kfree(f);
         return -EFAULT;
     }
-    kfree(f0);
-    kfree(f1);
-    kfree(f2);
-    return strlen(f1);
+
+    return retSize;
 }
 
 static long long fib_time_proxy(long long k, char *buf)
