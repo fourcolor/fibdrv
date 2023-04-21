@@ -194,29 +194,33 @@ static long long fib_sequence_str(long long k, void *buf)
 static long long fib_time_proxy(long long k, char *buf, size_t size)
 {
     long long result = 0;
-    // printk("fibbb %d",size);
     switch (size) {
     case 0:
         kt = ktime_get();
         result = fib_sequence_str(k, buf);
-        kt = ktime_sub(ktime_get(), kt);
+        kt = ktime_get() - kt;
         break;
     case 1:
         kt = ktime_get();
         result = fib_sequence_fast_double(k, buf);
-        kt = ktime_sub(ktime_get(), kt);
+        kt = ktime_get() - kt;
         break;
     case 2:
         kt = ktime_get();
         result = fib_sequence(k);
-        kt = ktime_sub(ktime_get(), kt);
+        kt = ktime_get() - kt;
         break;
     case 3:
+        kt = ktime_get();
+        result = fib_sequence_bn(k, buf);
+        kt = ktime_get() - kt;
+        break;
+    case 4:
         kt = ktime_get();
         result = fib_sequence_bn_fast_double(k, buf);
         kt = ktime_get() - kt;
         break;
-    case 4:
+    case 5:
         kt = ktime_get();
         result = fast_double_buttom_up(k);
         kt = ktime_get() - kt;

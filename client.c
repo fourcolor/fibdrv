@@ -15,11 +15,15 @@ static inline long long get_nanotime()
     return ts.tv_sec * 1e9 + ts.tv_nsec;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    int mode = 1;
+    if (argc > 1) {
+        mode = atoi(argv[1]);
+    }
     char read_buf[300] = {'\0'};
     char write_buf[] = "testing writing";
-    int offset = 2000; /* TODO: try test something bigger than the limit */
+    int offset = 1000; /* TODO: try test something bigger than the limit */
 
     int fd = open(FIB_DEV, O_RDWR);
     FILE *data = fopen("data", "w");
@@ -33,14 +37,14 @@ int main()
     for (int i = 0; i <= offset; i++) {
         lseek(fd, i, SEEK_SET);
         long long start = get_nanotime();
-        long long sz = read(fd, read_buf, 4);
+        long long sz = read(fd, read_buf, mode);
         long long utime = get_nanotime() - start;
         long long ktime = write(fd, write_buf, strlen(write_buf));
         fprintf(data, "%d %lld %lld %lld\n", i, ktime, utime, utime - ktime);
-        printf("Reading from " FIB_DEV
-               " at offset %d, returned the sequence "
-               "%s.\n",
-               i, read_buf);
+        // printf("Reading from " FIB_DEV
+        //        " at offset %d, returned the sequence "
+        //        "%s.\n",
+        //        i, read_buf);
         memset(read_buf, '\0', 300);
         // printf("Writing to " FIB_DEV ", returned the sequence %lld\n",
         // ktime);
