@@ -8,8 +8,8 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include "bn.h"
 #include "strlib.h"
-
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
 MODULE_DESCRIPTION("Fibonacci engine driver");
@@ -43,9 +43,138 @@ static long long fib_sequence(long long k)
     return f[k];
 }
 
+long long fast_double(long long k)
+{
+    if (k <= 2)
+        return !!k;
+    long long n = fast_double(k >> 1);
+    long long n1 = fast_double((k >> 1) + 1);
+    if (k & 1)
+        return n * n + n1 * n1;
+
+    return n * ((n1 << 1) - n);
+}
+
+long long fast_double_buttom_up(long long k)
+{
+    if (k <= 2)
+        return !!k;
+
+    uint8_t count = 63 - __builtin_clzll(k);
+    uint64_t fib_n0 = 1, fib_n1 = 1;
+
+    for (uint64_t i = count, fib_2n0, fib_2n1, mask; i-- > 0;) {
+        fib_2n0 = fib_n0 * ((fib_n1 << 1) - fib_n0);
+        fib_2n1 = fib_n0 * fib_n0 + fib_n1 * fib_n1;
+
+        mask = -!!(k & (1UL << i));
+        fib_n0 = (fib_2n0 & ~mask) + (fib_2n1 & mask);
+        fib_n1 = (fib_2n0 & mask) + fib_2n1;
+    }
+    return fib_n0;
+}
+
+
+static long long fib_sequence_fast_double(long long k, void *buf)
+{
+    long long *f = kmalloc(sizeof(long long), GFP_KERNEL);
+
+    f[0] = fast_double(k);
+    if (copy_to_user(buf, f, sizeof(long long))) {
+        kfree(f);
+        return -EFAULT;
+    }
+    return sizeof(long long);
+}
+
+static long long fib_sequence_bn(unsigned int n, char *buf)
+{
+    bn *dest = bn_alloc(1);
+    bn_resize(dest, 1);
+    if (n < 2) {
+        dest->number[0] = n;
+        goto copy;
+    }
+
+    bn *a = bn_alloc(1);
+    bn *b = bn_alloc(1);
+    dest->number[0] = 1;
+
+    for (unsigned int i = 1; i < n; i++) {
+        bn_cpy(b, dest);
+        bn_add(dest, a, dest);
+        bn_swap(a, b);
+    }
+    bn_free(a);
+    bn_free(b);
+copy:
+    char *p = bn_to_string(dest);
+    size_t len = strlen(p) + 1;
+    if (copy_to_user(buf, p, sizeof(char) * len)) {
+        return -EFAULT;
+    }
+    bn_free(dest);
+    kfree(p);
+    return len;
+}
+
+
+
+static long long fib_sequence_bn_fast_double(unsigned int n, char *buf)
+{
+    bn *dest = bn_alloc(1);
+    bn_resize(dest, 1);
+    if (n < 2) {
+        dest->number[0] = n;
+        goto copy2;
+    }
+
+    bn *f1 = dest;
+    bn *f2 = bn_alloc(1);
+    f1->number[0] = 0;
+    f2->number[0] = 1;
+    bn *k1 = bn_alloc(1);
+    bn *k2 = bn_alloc(1);
+
+
+    for (unsigned int i = 1U << 31; i; i >>= 1) {
+        bn_cpy(k1, f2);
+        bn_lshift(k1, 1);
+        bn_sub(k1, f1, k1);
+        bn_mult(k1, f1, k1);
+
+        bn_mult(f1, f1, f1);
+        bn_mult(f2, f2, f2);
+        bn_cpy(k2, f1);
+        bn_add(k2, f2, k2);
+        if (n & i) {
+            bn_cpy(f1, k2);
+            bn_cpy(f2, k1);
+            bn_add(f2, k2, f2);
+        } else {
+            bn_cpy(f1, k1);
+            bn_cpy(f2, k2);
+        }
+    }
+
+    bn_free(f2);
+    bn_free(k1);
+    bn_free(k2);
+copy2:
+    char *p = bn_to_string(dest);
+    size_t len = strlen(p) + 1;
+    if (copy_to_user(buf, p, sizeof(char) * len)) {
+        return -EFAULT;
+    }
+    bn_free(dest);
+    kfree(p);
+    return len;
+}
+
+
 static long long fib_sequence_str(long long k, void *buf)
 {
-    strNum_t *f = kmalloc((k + 1) * sizeof(strNum_t), GFP_KERNEL);
+    strNum_t *f = kmalloc((k + 2) * sizeof(strNum_t), GFP_KERNEL);
     strncpy(f[0].data, "0", 1);
     strncpy(f[1].data, "1", 1);
 
@@ -62,11 +191,37 @@ static long long fib_sequence_str(long long k, void *buf)
     return retSize;
 }
 
-static long long fib_time_proxy(long long k, char *buf)
+static long long fib_time_proxy(long long k, char *buf, size_t size)
 {
-    kt = ktime_get();
-    long long result = fib_sequence_str(k, buf);
-    kt = ktime_sub(ktime_get(), kt);
+    long long result = 0;
+    // printk("fibbb %d",size);
+    switch (size) {
+    case 0:
+        kt = ktime_get();
+        result = fib_sequence_str(k, buf);
+        kt = ktime_sub(ktime_get(), kt);
+        break;
+    case 1:
+        kt = ktime_get();
+        result = fib_sequence_fast_double(k, buf);
+        kt = ktime_sub(ktime_get(), kt);
+        break;
+    case 2:
+        kt = ktime_get();
+        result = fib_sequence(k);
+        kt = ktime_sub(ktime_get(), kt);
+        break;
+    case 3:
+        kt = ktime_get();
+        result = fib_sequence_bn_fast_double(k, buf);
+        kt = ktime_get() - kt;
+        break;
+    case 4:
+        kt = ktime_get();
+        result = fast_double_buttom_up(k);
+        kt = ktime_get() - kt;
+        break;
+    }
 
     return result;
 }
@@ -92,7 +247,7 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
-    return (ssize_t) fib_time_proxy(*offset, buf);
+    return (ssize_t) fib_time_proxy(*offset, buf, size);
 }
 
 /* write operation is skipped */

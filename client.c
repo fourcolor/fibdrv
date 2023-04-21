@@ -17,12 +17,12 @@ static inline long long get_nanotime()
 
 int main()
 {
-    char read_buf[128];
+    char read_buf[300] = {'\0'};
     char write_buf[] = "testing writing";
-    int offset = 100; /* TODO: try test something bigger than the limit */
+    int offset = 2000; /* TODO: try test something bigger than the limit */
 
     int fd = open(FIB_DEV, O_RDWR);
-    FILE *data = fopen("data.txt", "w");
+    FILE *data = fopen("data", "w");
 
     if (fd < 0) {
         perror("Failed to open character device");
@@ -33,7 +33,7 @@ int main()
     for (int i = 0; i <= offset; i++) {
         lseek(fd, i, SEEK_SET);
         long long start = get_nanotime();
-        long long sz = read(fd, read_buf, 128);
+        long long sz = read(fd, read_buf, 4);
         long long utime = get_nanotime() - start;
         long long ktime = write(fd, write_buf, strlen(write_buf));
         fprintf(data, "%d %lld %lld %lld\n", i, ktime, utime, utime - ktime);
@@ -41,7 +41,9 @@ int main()
                " at offset %d, returned the sequence "
                "%s.\n",
                i, read_buf);
-        printf("Writing to " FIB_DEV ", returned the sequence %lld\n", ktime);
+        memset(read_buf, '\0', 300);
+        // printf("Writing to " FIB_DEV ", returned the sequence %lld\n",
+        // ktime);
     }
 
     close(fd);
